@@ -1,6 +1,6 @@
 <div align="center">
-    <a href="https://github.com/MarSeventh/CloudFlare-ImgBed"><img width="200px" alt="logo" src="https://imgbed.sanyue.site/file/github/1741863225688_logo.e8dbfa27.png"/></a>
-    <p><em>🗂️开源文件托管解决方案，基于 Cloudflare Pages，支持 Telegram Bot 、 Cloudflare R2 ，S3 API 等多种不同存储渠道。</em></p>
+    <a href="https://github.com/MarSeventh/CloudFlare-ImgBed"><img width="80%" alt="logo" src="static/readme/banner.png"/></a>
+    <p><em>🗂️开源文件托管解决方案，基于 Cloudflare Pages，支持 Telegram Bot 、 Cloudflare R2 ，S3 等多种存储渠道</em></p>
     <div>
         <a href="https://github.com/MarSeventh/CloudFlare-ImgBed/blob/main/LICENSE">
         <img src="https://img.shields.io/github/license/MarSeventh/CloudFlare-ImgBed" alt="License" />
@@ -23,10 +23,7 @@
     </div>
 </div>
 
-----
-# CloudFlare-ImgBed
-
-**前端仓库**：[MarSeventh/Sanyue-ImgHub](https://github.com/MarSeventh/Sanyue-ImgHub)
+---
 
 > [!IMPORTANT]
 >
@@ -39,8 +36,11 @@
 
 ## 置顶
 
-部署使用出现问题，请先仔细查阅文档、常见问题解答以及已有issues。
-**注意**：本仓库为[Telegraph-Image](https://github.com/cf-pages/Telegraph-Image)项目的重制版，如果你觉得本项目不错，在支持本项目的同时，也请支持原项目。
+1. 部署使用出现问题，请先仔细查阅文档、常见问题解答以及已有issues。
+
+2. **前端仓库**：[MarSeventh/Sanyue-ImgHub](https://github.com/MarSeventh/Sanyue-ImgHub)
+
+3. **注意**：本仓库为[Telegraph-Image](https://github.com/cf-pages/Telegraph-Image)项目的重制版，如果你觉得本项目不错，在支持本项目的同时，也请支持原项目。
 
 ## 2025.2.6  V2.0 版本升级注意事项
 
@@ -66,6 +66,19 @@
 > 此外，目前**KV数据库为必须配置**，如果以前未配置请按照文档说明配置。
 >
 > 出现问题，请先查看第5节常见问题Q&A部分。
+
+</details>
+
+<details>
+    <summary>生态建设</summary>
+
+
+
+## 1. 插件
+
+- **编辑器内自动上传（油猴脚本）**：https://greasyfork.org/zh-CN/scripts/529816-image-uploader-to-markdown-to-cloudflare-imgbed （_作者：Linux.do: [calg_c](https://linux.do/u/calg_c/summary)_）
+
+
 
 </details>
 
@@ -118,7 +131,7 @@ Fix Bugs:
     <summary>更新日志</summary>
 
 
-## 2025.3.9
+## 2025.3.14
 
 Add Features:
 
@@ -1004,6 +1017,7 @@ Web端在登录页面输入你的**认证码**即可登录使用；API端需要�
 40. :hourglass_flowing_sand:搜索功能增强
 41. :white_check_mark:支持粘贴多个链接，支持外链管理
 42. :hourglass_flowing_sand:上传文件记录MD5，支持文件硬链接
+43. :hourglass_flowing_sand:上传页面增加最近上传展示
 
 </details>
 
