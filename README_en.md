@@ -5,7 +5,7 @@
         <a href="https://github.com/MarSeventh/CloudFlare-ImgBed/blob/main/README.md">简体中文</a> | <a href="https://github.com/MarSeventh/CloudFlare-ImgBed/blob/main/README_en.md">English</a> | <a
         href="https://cfbed.sanyue.de/en">Official Website</a>
     </p>
-    <div>
+    <p align="center">
         <a href="https://github.com/MarSeventh/CloudFlare-ImgBed/blob/main/LICENSE">
         <img src="https://img.shields.io/github/license/MarSeventh/CloudFlare-ImgBed" alt="License" />
         </a>
@@ -27,8 +27,14 @@
         <a href="https://github.com/MarSeventh/CloudFlare-ImgBed/network/members">
           <img src="https://img.shields.io/github/forks/MarSeventh/CloudFlare-ImgBed" alt="Forks" />
         </a>
-    </div>
+    </p>
+    <p align="center">
+      <a href="https://trendshift.io/repositories/14324" target="_blank">
+        <img src="https://trendshift.io/api/badge/repositories/14324" alt="GitHub Trending" height="80">
+      </a>
+    </p>
 </div>
+
 
 
 ---
@@ -92,13 +98,13 @@ Provides detailed deployment documentation, feature docs, development plans, upd
 <details>
     <summary>Other page screenshots</summary>
 
-![image-20250313204308225](static/readme/202503132043466.png)
+![image-20250313204308225](static/readme/dashboard.png)
 
-![image-20250314152355339](static/readme/202503141524797.png)
+![image-20250314152355339](static/readme/customer-config.png)
 
 ![status-page](static/readme/status-page.png)
 
-![image-20250313204325002](static/readme/202503132043265.png)
+
 
 </details>
 
