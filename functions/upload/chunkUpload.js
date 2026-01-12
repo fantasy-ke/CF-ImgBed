@@ -33,6 +33,8 @@ export async function initializeChunkedUpload(context) {
 
         // 获取上传渠道
         const uploadChannel = url.searchParams.get('uploadChannel') || 'telegram';
+        // 获取指定的渠道名称
+        const channelName = url.searchParams.get('channelName') || '';
 
         // 存储上传会话信息
         const sessionInfo = {
@@ -41,6 +43,7 @@ export async function initializeChunkedUpload(context) {
             originalFileType,
             totalChunks,
             uploadChannel,
+            channelName,
             uploadIp,
             ipAddress,
             status: 'initialized',
@@ -62,7 +65,8 @@ export async function initializeChunkedUpload(context) {
                 uploadId,
                 originalFileName,
                 totalChunks,
-                uploadChannel
+                uploadChannel,
+                channelName
             }
         }), {
             status: 200,
@@ -117,6 +121,11 @@ export async function handleChunkUpload(context) {
 
         // 获取上传渠道
         const uploadChannel = url.searchParams.get('uploadChannel') || sessionInfo.uploadChannel || 'telegram';
+        // 获取指定的渠道名称
+        const channelName = url.searchParams.get('channelName') || sessionInfo.channelName || '';
+
+        // 将渠道名称存入 context
+        context.specifiedChannelName = channelName;
 
         // 立即创建分块记录，标记为"uploading"状态
         const chunkKey = `chunk_${uploadId}_${chunkIndex.toString().padStart(3, '0')}`;
@@ -425,13 +434,21 @@ async function uploadSingleChunkToR2Multipart(context, chunkData, chunkIndex, to
 
 // 上传单个分块到S3 (Multipart Upload)
 async function uploadSingleChunkToS3Multipart(context, chunkData, chunkIndex, totalChunks, uploadId, originalFileName, originalFileType) {
-    const { env, uploadConfig } = context;
+    const { env, uploadConfig, specifiedChannelName } = context;
     const db = getDatabase(env);
 
     try {
         const s3Settings = uploadConfig.s3;
         const s3Channels = s3Settings.channels;
-        const s3Channel = selectConsistentChannel(s3Channels, uploadId, s3Settings.loadBalance.enabled);
+        
+        // 优先使用指定的渠道名称
+        let s3Channel;
+        if (specifiedChannelName) {
+            s3Channel = s3Channels.find(ch => ch.name === specifiedChannelName);
+        }
+        if (!s3Channel) {
+            s3Channel = selectConsistentChannel(s3Channels, uploadId, s3Settings.loadBalance.enabled);
+        }
 
         console.log(`Uploading S3 chunk ${chunkIndex} for uploadId: ${uploadId}, selected channel: ${s3Channel.name || 'default'}`);
 
@@ -538,12 +555,20 @@ async function uploadSingleChunkToS3Multipart(context, chunkData, chunkIndex, to
 
 // 上传单个分块到Telegram
 async function uploadSingleChunkToTelegram(context, chunkData, chunkIndex, totalChunks, uploadId, originalFileName, originalFileType) {
-    const { uploadConfig } = context;
+    const { uploadConfig, specifiedChannelName } = context;
 
     try {
         const tgSettings = uploadConfig.telegram;
         const tgChannels = tgSettings.channels;
-        const tgChannel = selectConsistentChannel(tgChannels, uploadId, tgSettings.loadBalance.enabled);
+        
+        // 优先使用指定的渠道名称
+        let tgChannel;
+        if (specifiedChannelName) {
+            tgChannel = tgChannels.find(ch => ch.name === specifiedChannelName);
+        }
+        if (!tgChannel) {
+            tgChannel = selectConsistentChannel(tgChannels, uploadId, tgSettings.loadBalance.enabled);
+        }
 
         console.log(`Uploading Telegram chunk ${chunkIndex} for uploadId: ${uploadId}, selected channel: ${tgChannel.name || 'default'}`);
 
@@ -553,15 +578,17 @@ async function uploadSingleChunkToTelegram(context, chunkData, chunkIndex, total
 
         const tgBotToken = tgChannel.botToken;
         const tgChatId = tgChannel.chatId;
+        const tgProxyUrl = tgChannel.proxyUrl || '';
 
         // 创建分块文件名
         const chunkFileName = `${originalFileName}.part${chunkIndex.toString().padStart(3, '0')}`;
         const chunkBlob = new Blob([chunkData], { type: 'application/octet-stream' });
 
-        // 上传分块到Telegram
+        // 上传分块到Telegram（支持代理域名）
         const chunkInfo = await uploadChunkToTelegramWithRetry(
             tgBotToken,
             tgChatId,
+            tgProxyUrl,
             chunkBlob,
             chunkFileName,
             chunkIndex,
@@ -592,12 +619,20 @@ async function uploadSingleChunkToTelegram(context, chunkData, chunkIndex, total
 
 // 上传单个分块到Discord
 async function uploadSingleChunkToDiscord(context, chunkData, chunkIndex, totalChunks, uploadId, originalFileName, originalFileType) {
-    const { uploadConfig } = context;
+    const { uploadConfig, specifiedChannelName } = context;
 
     try {
         const discordSettings = uploadConfig.discord;
         const discordChannels = discordSettings.channels;
-        const discordChannel = selectConsistentChannel(discordChannels, uploadId, discordSettings.loadBalance?.enabled);
+        
+        // 优先使用指定的渠道名称
+        let discordChannel;
+        if (specifiedChannelName) {
+            discordChannel = discordChannels.find(ch => ch.name === specifiedChannelName);
+        }
+        if (!discordChannel) {
+            discordChannel = selectConsistentChannel(discordChannels, uploadId, discordSettings.loadBalance?.enabled);
+        }
 
         console.log(`Uploading Discord chunk ${chunkIndex} for uploadId: ${uploadId}, selected channel: ${discordChannel.name || 'default'}`);
 
@@ -929,7 +964,16 @@ export async function cleanupFailedMultipartUploads(context, uploadId, uploadCha
             // 清理S3 multipart upload
             const s3Settings = uploadConfig.s3;
             const s3Channels = s3Settings.channels;
-            const s3Channel = selectConsistentChannel(s3Channels, uploadId, s3Settings.loadBalance.enabled);
+            
+            // 优先使用指定的渠道名称
+            let s3Channel;
+            const specifiedChannelName = context.specifiedChannelName;
+            if (specifiedChannelName) {
+                s3Channel = s3Channels.find(ch => ch.name === specifiedChannelName);
+            }
+            if (!s3Channel) {
+                s3Channel = selectConsistentChannel(s3Channels, uploadId, s3Settings.loadBalance.enabled);
+            }
 
             if (s3Channel) {
                 const { endpoint, pathStyle, accessKeyId, secretAccessKey, bucketName, region } = s3Channel;
@@ -1218,11 +1262,11 @@ export async function uploadLargeFileToTelegram(context, file, fullId, metadata,
     }
 }
 
-// 将每个分块上传至Telegram，支持失败重试
-async function uploadChunkToTelegramWithRetry(tgBotToken, tgChatId, chunkBlob, chunkFileName, chunkIndex, totalChunks, maxRetries = 2) {
+// 将每个分块上传至Telegram，支持失败重试（支持代理域名）
+async function uploadChunkToTelegramWithRetry(tgBotToken, tgChatId, tgProxyUrl, chunkBlob, chunkFileName, chunkIndex, totalChunks, maxRetries = 2) {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
         try {
-            const tgAPI = new TelegramAPI(tgBotToken);
+            const tgAPI = new TelegramAPI(tgBotToken, tgProxyUrl);
 
             const caption = `Part ${chunkIndex + 1}/${totalChunks}`;
 
