@@ -2,7 +2,7 @@ import { userAuthCheck, UnauthorizedResponse } from "../utils/userAuth";
 import { fetchUploadConfig, fetchSecurityConfig } from "../utils/sysConfig";
 import {
     createResponse, getUploadIp, getIPAddress, isExtValid,
-    moderateContent, purgeCDNCache, isBlockedUploadIp, buildUniqueFileId, endUpload
+    moderateContent, purgeCDNCache, isBlockedUploadIp, buildUniqueFileId, endUpload, getImageDimensions
 } from "./uploadTools";
 import { initializeChunkedUpload, handleChunkUpload, uploadLargeFileToTelegram, handleCleanupRequest } from "./chunkUpload";
 import { handleChunkMerge } from "./chunkMerge";
@@ -124,13 +124,27 @@ async function processFileUpload(context, formdata = null) {
 
     // 获取文件信息
     const time = new Date().getTime();
-    const fileType = formdata.get('file').type;
-    let fileName = formdata.get('file').name;
-    const fileSize = (formdata.get('file').size / 1024 / 1024).toFixed(2); // 文件大小，单位MB
+    const file = formdata.get('file');
+    const fileType = file.type;
+    let fileName = file.name;
+    const fileSizeBytes = file.size; // 文件大小，单位字节
+    const fileSize = (fileSizeBytes / 1024 / 1024).toFixed(2); // 文件大小，单位MB
 
     // 检查fileType和fileName是否存在
     if (fileType === null || fileType === undefined || fileName === null || fileName === undefined) {
         return createResponse('Error: fileType or fileName is wrong, check the integrity of this file!', { status: 400 });
+    }
+
+    // 提取图片尺寸
+    let imageDimensions = null;
+    if (fileType.startsWith('image/')) {
+        try {
+            // 统一读取 64KB，足以覆盖 JPEG 的 EXIF 数据和其他格式
+            const headerBuffer = await file.slice(0, 65536).arrayBuffer();
+            imageDimensions = getImageDimensions(headerBuffer, fileType);
+        } catch (error) {
+            console.error('Error reading image dimensions:', error);
+        }
     }
 
     // 如果上传文件夹路径为空，尝试从文件名中获取
@@ -148,6 +162,7 @@ async function processFileUpload(context, formdata = null) {
         FileName: fileName,
         FileType: fileType,
         FileSize: fileSize,
+        FileSizeBytes: fileSizeBytes,
         UploadIP: uploadIp,
         UploadAddress: ipAddress,
         ListType: "None",
@@ -156,6 +171,12 @@ async function processFileUpload(context, formdata = null) {
         Directory: normalizedFolder === '' ? '' : normalizedFolder + '/',
         Tags: []
     };
+
+    // 添加图片尺寸信息
+    if (imageDimensions) {
+        metadata.Width = imageDimensions.width;
+        metadata.Height = imageDimensions.height;
+    }
 
     let fileExt = fileName.split('.').pop(); // 文件扩展名
     if (!isExtValid(fileExt)) {
@@ -263,16 +284,12 @@ async function uploadFileToCloudflareR2(context, fullId, metadata, returnLink) {
 
     const R2DataBase = env.img_r2;
 
-    // 写入R2数据库，获取实际存储大小
-    const r2Object = await R2DataBase.put(fullId, formdata.get('file'));
+    // 写入R2数据库
+    await R2DataBase.put(fullId, formdata.get('file'));
 
     // 更新metadata
     metadata.Channel = "CloudflareR2";
     metadata.ChannelName = r2Channel.name || "R2_env";
-    // 使用 R2 返回的实际文件大小
-    if (r2Object && r2Object.size) {
-        metadata.FileSize = (r2Object.size / 1024 / 1024).toFixed(2);
-    }
 
     // 图像审查，采用R2的publicUrl
     const R2PublicUrl = r2Channel.publicUrl;
@@ -329,7 +346,7 @@ async function uploadFileToS3(context, fullId, metadata, returnLink) {
         return createResponse('Error: No S3 channel provided', { status: 400 });
     }
 
-    const { endpoint, pathStyle, accessKeyId, secretAccessKey, bucketName, region } = s3Channel;
+    const { endpoint, pathStyle, accessKeyId, secretAccessKey, bucketName, region, cdnDomain } = s3Channel;
 
     // 创建 S3 客户端
     const s3Client = new S3Client({
@@ -381,6 +398,11 @@ async function uploadFileToS3(context, fullId, metadata, returnLink) {
         metadata.S3Region = region || "auto";
         metadata.S3BucketName = bucketName;
         metadata.S3FileKey = s3FileName;
+        // 保存 CDN 文件完整路径（如果配置了 CDN 域名）
+        if (cdnDomain) {
+            // 存储完整的 CDN 文件路径，而不是仅存储域名
+            metadata.S3CdnFileUrl = `${cdnDomain.replace(/\/$/, '')}/${s3FileName}`;
+        }
 
         // 图像审查
         if (uploadModerate && uploadModerate.enabled) {
@@ -753,20 +775,32 @@ async function uploadFileToHuggingFace(context, fullId, metadata, returnLink) {
         // 更新 metadata
         metadata.Channel = "HuggingFace";
         metadata.ChannelName = hfChannel.name || "HuggingFace_env";
-        metadata.FileSize = (file.size / 1024 / 1024).toFixed(2);
         metadata.HfRepo = hfChannel.repo;
         metadata.HfFilePath = hfFilePath;
         metadata.HfToken = hfChannel.token;
         metadata.HfIsPrivate = hfChannel.isPrivate || false;
         metadata.HfFileUrl = result.fileUrl;
 
-        // 图像审查（公开仓库直接访问，私有仓库需要代理）
-        let moderateUrl = result.fileUrl;
-        if (!hfChannel.isPrivate) {
-            metadata.Label = await moderateContent(env, moderateUrl);
-        } else {
-            // 私有仓库暂不支持图像审查，标记为 None
-            metadata.Label = "None";
+        // 图像审查
+        const securityConfig = context.securityConfig;
+        const uploadModerate = securityConfig.upload?.moderate;
+        
+        if (uploadModerate && uploadModerate.enabled) {
+            if (!hfChannel.isPrivate) {
+                // 公开仓库：直接通过公开URL访问进行审查，只写入1次KV
+                metadata.Label = await moderateContent(env, result.fileUrl);
+            } else {
+                // 私有仓库：先写入KV，再通过自己的域名访问进行审查
+                try {
+                    await db.put(fullId, "", { metadata });
+                } catch (error) {
+                    return createResponse('Error: Failed to write to KV database', { status: 500 });
+                }
+                
+                const moderateUrl = `https://${context.url.hostname}/file/${fullId}`;
+                await purgeCDNCache(env, moderateUrl, context.url);
+                metadata.Label = await moderateContent(env, moderateUrl);
+            }
         }
 
         // 写入 KV 数据库
