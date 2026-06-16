@@ -88,13 +88,16 @@ export async function fetchUploadConfig(env, context = null) {
     }
 }
 
-export async function fetchSecurityConfig(env) {
+export async function fetchSecurityConfig(env, options = {}) {
     try {
         const db = getDatabase(env);
         const settings = await getSecurityConfig(db, env);
         return settings;
     } catch (error) {
         console.error('Failed to fetch security config:', error);
+        if (options.throwOnError) {
+            throw error;
+        }
         // 返回默认配置
         return {
             auth: {
@@ -102,7 +105,12 @@ export async function fetchSecurityConfig(env) {
                 admin: { adminUsername: "", adminPassword: "" }
             },
             upload: {
-                moderate: { enabled: false, channel: "default", moderateContentApiKey: "", nsfwApiPath: "" }
+                moderate: { enabled: false, channel: "default", moderateContentApiKey: "", nsfwApiPath: "" },
+                ipQuery: {
+                    enabled: false,
+                    channel: "customApi",
+                    customApi: { url: "", params: [{ key: "ip", value: "{ip}" }], responseFields: [] }
+                }
             },
             access: { allowedDomains: "", whiteListMode: false, sessionSecure: false, userSessionMaxAge: 14, adminSessionMaxAge: 14 }
         };

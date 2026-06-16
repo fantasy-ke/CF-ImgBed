@@ -1,6 +1,7 @@
 import { getDatabase } from '../../../utils/databaseAdapter.js';
 import { hashPassword, isHashed } from '../../../utils/auth/passwordHash.js';
 import { destroySessionsByAuthType } from '../../../utils/auth/sessionManager.js';
+import { normalizeSessionMaxAgeDays } from '../../../utils/auth/sessionConfig.js';
 
 export async function onRequest(context) {
     // 安全设置相关，GET方法读取设置，POST方法保存设置
@@ -48,6 +49,8 @@ export async function onRequest(context) {
         // 覆盖设置，apiTokens不在这里修改
         settings.upload = newSettings.upload || settings.upload
         settings.access = newSettings.access || settings.access
+        settings.access.userSessionMaxAge = normalizeSessionMaxAgeDays(settings.access.userSessionMaxAge)
+        settings.access.adminSessionMaxAge = normalizeSessionMaxAgeDays(settings.access.adminSessionMaxAge)
 
         // 处理认证设置：空密码表示不修改，_clear 标记表示清除密码
         let userPasswordChanged = false;
@@ -151,6 +154,15 @@ export async function getSecurityConfig(db, env) {
             channel: kvUpload.moderate?.channel || 'moderatecontent.com', // [moderatecontent.com, nsfwjs]
             moderateContentApiKey: kvUpload.moderate?.moderateContentApiKey || kvUpload.moderate?.apiKey || env.ModerateContentApiKey || '',
             nsfwApiPath: kvUpload.moderate?.nsfwApiPath || '',
+        },
+        ipQuery: {
+            enabled: kvUpload.ipQuery?.enabled ?? false,
+            channel: kvUpload.ipQuery?.channel || 'customApi',
+            customApi: {
+                url: kvUpload.ipQuery?.customApi?.url || '',
+                params: normalizeIpQueryParams(kvUpload.ipQuery?.customApi?.params),
+                responseFields: normalizeIpQueryResponseFields(kvUpload.ipQuery?.customApi?.responseFields)
+            }
         }
     }
     settings.upload = upload
@@ -162,8 +174,8 @@ export async function getSecurityConfig(db, env) {
         whiteListMode: kvAccess.whiteListMode ?? env.WhiteList_Mode === 'true',
         // 新增会话安全策略字段
         sessionSecure: kvAccess.sessionSecure ?? false,
-        userSessionMaxAge: kvAccess.userSessionMaxAge ?? 14,
-        adminSessionMaxAge: kvAccess.adminSessionMaxAge ?? 14,
+        userSessionMaxAge: normalizeSessionMaxAgeDays(kvAccess.userSessionMaxAge ?? 14),
+        adminSessionMaxAge: normalizeSessionMaxAgeDays(kvAccess.adminSessionMaxAge ?? 14),
     }
     settings.access = access
 
@@ -175,4 +187,26 @@ export async function getSecurityConfig(db, env) {
     settings.apiTokens = apiTokens
 
     return settings;
+}
+
+function normalizeIpQueryParams(params) {
+    if (!Array.isArray(params) || params.length === 0) {
+        return [{ key: 'ip', value: '{ip}' }];
+    }
+
+    return params.map(param => ({
+        key: param?.key || '',
+        value: param?.value || ''
+    }));
+}
+
+function normalizeIpQueryResponseFields(fields) {
+    if (!Array.isArray(fields)) {
+        return [];
+    }
+
+    return fields.map(field => {
+        if (typeof field === 'string') return field;
+        return field?.path || '';
+    });
 }
